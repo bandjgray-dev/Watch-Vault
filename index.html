@@ -9,7 +9,8 @@
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#020617">
     <meta name="mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black">
     <meta name="apple-mobile-web-app-title" content="Watch Vault">
     <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/2972/2972531.png">
 
@@ -235,7 +236,7 @@
             <div class="flex flex-col gap-2 pt-2">
                 <button type="button" onclick="executeShareText()" class="w-full bg-slate-800 hover:bg-slate-700 text-white font-semibold text-xs py-2.5 rounded-xl">Share Text (SMS / App)</button>
                 <button type="button" onclick="executeEmailReport()" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs py-2.5 rounded-xl">Email Details</button>
-                <button type="button" onclick="executeGeneratePDF()" class="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-semibold text-xs py-2.5 rounded-xl">Download PDF Report</button>
+                <button type="button" onclick="executeGeneratePDF()" class="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-semibold text-xs py-2.5 rounded-xl">Print / Save as PDF</button>
                 <button type="button" onclick="closeShareModal()" class="w-full bg-slate-950 text-slate-400 font-semibold text-xs py-2 rounded-xl mt-1">Cancel</button>
             </div>
         </div>
@@ -257,6 +258,24 @@
         var currentTempImages = [];
         var activeCategoryFilter = 'All';
         var activeShareWatchId = null;
+
+        function esc(s) {
+            return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+        }
+
+        function normalizeWatch(w, i) {
+            if (!w || typeof w !== 'object') return null;
+            var id = Number(w.id);
+            if (!isFinite(id) || id <= 0) id = Date.now() + i;
+            var cats = Array.isArray(w.categories) ? w.categories : (w.category ? [w.category] : []);
+            cats = cats.map(String).filter(Boolean);
+            if (!cats.length) cats = ['General'];
+            var out = Object.assign({}, w);
+            out.id = id;
+            out.categories = cats;
+            out.images = Array.isArray(w.images) ? w.images.filter(function(u) { return typeof u === 'string' && /^(data:image\/|https?:\/\/)/i.test(u); }) : [];
+            return out;
+        }
 
         var defaultWatches = [
             {
@@ -313,16 +332,17 @@
                     }
                 };
 
+                tx.oncomplete = function() { db.close(); };
                 var store = tx.objectStore('vault');
                 var req = store.get('watch_collection');
                 req.onsuccess = function() {
                     var data = req.result;
-                    if (data && Array.isArray(data) && data.length > 0) {
+                    if (Array.isArray(data)) {
                         watches = data.map(function(w) {
                             if (!w.categories && w.category) {
                                 w.categories = [w.category];
                             } else if (!w.categories) {
-                                w.categories = ['Diver'];
+                                w.categories = ['General'];
                             }
                             return w;
                         });
@@ -348,37 +368,47 @@
         async function saveVaultData() {
             try {
                 var db = await openIDB();
-                var tx = db.transaction(['vault', 'categories'], 'readwrite');
-                tx.objectStore('vault').put(watches, 'watch_collection');
-                tx.objectStore('categories').put(allCategories, 'cat_list');
-            } catch(err) {
+                await new Promise(function(resolve, reject) {
+                    var tx = db.transaction(['vault', 'categories'], 'readwrite');
+                    tx.objectStore('vault').put(watches, 'watch_collection');
+                    tx.objectStore('categories').put(allCategories, 'cat_list');
+                    tx.oncomplete = function() { db.close(); resolve(); };
+                    tx.onerror = tx.onabort = function() { db.close(); reject(tx.error); };
+                });
+                return true;
+            } catch (err) {
                 console.error("IndexedDB save error:", err);
+                alert("Could not save your changes (storage may be full). Export a backup and free some space.");
+                return false;
             }
         }
 
-        loadVaultData();
+        document.addEventListener('DOMContentLoaded', loadVaultData);
     </script>
     <script>
         // Handle physical/browser back button on mobile to close modals instead of exiting app
-        window.addEventListener('popstate', function(event) {
-            var detailOpen = !document.getElementById('detailModal').classList.contains('hidden');
-            var watchModalOpen = !document.getElementById('watchModal').classList.contains('hidden');
-            var shareModalOpen = !document.getElementById('shareModal').classList.contains('hidden');
-            var lightboxOpen = !document.getElementById('lightboxModal').classList.contains('hidden');
-
-            if (lightboxOpen) {
-                closeLightbox();
-            } else if (shareModalOpen) {
-                closeShareModal();
-            } else if (detailOpen) {
-                closeDetailModal();
-            } else if (watchModalOpen) {
-                closeModal();
-            }
+        var modalHistoryPushed = false;
+        function isOpen(id) { return !document.getElementById(id).classList.contains('hidden'); }
+        function anyModalOpen() { return ['detailModal', 'watchModal', 'shareModal', 'lightboxModal'].some(isOpen); }
+        function pushModalState() {
+            if (!modalHistoryPushed) { history.pushState({ modal: true }, ''); modalHistoryPushed = true; }
+        }
+        function schedulePopModalState() {
+            setTimeout(function() {
+                if (modalHistoryPushed && !anyModalOpen()) { modalHistoryPushed = false; history.back(); }
+            }, 0);
+        }
+        window.addEventListener('popstate', function() {
+            modalHistoryPushed = false;
+            if (isOpen('lightboxModal')) closeLightbox();
+            else if (isOpen('shareModal')) closeShareModal();
+            else if (isOpen('detailModal')) closeDetailModal();
+            else if (isOpen('watchModal')) closeModal();
+            if (anyModalOpen()) pushModalState();
         });
 
         function openModal() {
-            history.pushState({ modal: 'edit' }, '');
+            pushModalState();
             document.getElementById('modalTitle').innerText = 'Add Watch';
             document.getElementById('watchId').value = '';
             document.getElementById('watchForm').reset();
@@ -393,18 +423,18 @@
         function closeModal() {
             document.getElementById('watchModal').classList.add('hidden');
             document.getElementById('watchModal').classList.remove('flex');
-            if (window.history.state && window.history.state.modal) {
-                history.back();
-            }
+            schedulePopModalState();
         }
 
         function renderCategoryCheckboxes(selectedCategories) {
             var container = document.getElementById('categoryCheckboxesContainer');
             if (!container) return;
-            container.innerHTML = allCategories.map(function(cat) {
+            var cats = allCategories.slice();
+            selectedCategories.forEach(function(c) { if (cats.indexOf(c) === -1) cats.push(c); });
+            container.innerHTML = cats.map(function(cat) {
                 var isChecked = selectedCategories.includes(cat) ? 'checked' : '';
                 return '<label class="flex items-center gap-2 cursor-pointer text-xs text-slate-300 hover:text-white">' +
-                    '<input type="checkbox" name="watchCategory" value="' + cat + '" ' + isChecked + ' class="rounded accent-indigo-600"><span>' + cat + '</span>' +
+                    '<input type="checkbox" name="watchCategory" value="' + esc(cat) + '" ' + isChecked + ' class="rounded accent-indigo-600"><span>' + esc(cat) + '</span>' +
                 '</label>';
             }).join('');
         }
@@ -428,14 +458,15 @@
         function renderCategoryFilters() {
             var filterContainer = document.getElementById('catFilters');
             if (!filterContainer) return;
-            
-            var html = '<button onclick="setFilter(\'All\', this)" class="filter-btn ' + (activeCategoryFilter === 'All' ? 'active bg-indigo-600 text-white border-indigo-500' : 'bg-slate-900 text-slate-400 border-slate-800') + ' text-xs font-semibold px-4 py-2 rounded-full whitespace-nowrap border shadow-sm transition-all">All</button>';
-            
-            allCategories.forEach(function(cat) {
-                var isActive = activeCategoryFilter === cat;
-                html += '<button onclick="setFilter(\'' + cat + '\', this)" class="filter-btn ' + (isActive ? 'active bg-indigo-600 text-white border-indigo-500' : 'bg-slate-900 text-slate-400 border-slate-800') + ' text-xs font-semibold px-4 py-2 rounded-full whitespace-nowrap border shadow-sm transition-all">' + cat + '</button>';
-            });
-            filterContainer.innerHTML = html;
+            var cats = allCategories.slice();
+            watches.forEach(function(w) { (w.categories || []).forEach(function(c) { if (cats.indexOf(c) === -1) cats.push(c); }); });
+            if (activeCategoryFilter !== 'All' && cats.indexOf(activeCategoryFilter) === -1) activeCategoryFilter = 'All';
+            var base = ' text-xs font-semibold px-4 py-2 rounded-full whitespace-nowrap border shadow-sm transition-all';
+            function btn(cat) {
+                var on = activeCategoryFilter === cat;
+                return '<button data-cat="' + esc(cat) + '" onclick="setFilter(this.dataset.cat, this)" class="filter-btn ' + (on ? 'active bg-indigo-600 text-white border-indigo-500' : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-slate-200') + base + '">' + esc(cat) + '</button>';
+            }
+            filterContainer.innerHTML = btn('All') + cats.map(btn).join('');
         }
 
         function setFilter(category, element) {
@@ -449,49 +480,36 @@
 
         function compressImage(file, callback) {
             var reader = new FileReader();
-            reader.onload = function (e) {
+            reader.onerror = function() { callback(null); };
+            reader.onload = function(e) {
                 var img = new Image();
-                img.onload = function () {
+                img.onerror = function() { callback(null); };
+                img.onload = function() {
+                    var max = 800, width = img.width, height = img.height;
+                    if (width > height) { if (width > max) { height *= max / width; width = max; } }
+                    else if (height > max) { width *= max / height; height = max; }
                     var canvas = document.createElement('canvas');
-                    var maxWidth = 800;
-                    var maxHeight = 800;
-                    var width = img.width;
-                    var height = img.height;
-
-                    if (width > height) {
-                        if (width > maxWidth) {
-                            height *= maxWidth / width;
-                            width = maxWidth;
-                        }
-                    } else {
-                        if (height > maxHeight) {
-                            width *= maxHeight / height;
-                            height = maxHeight;
-                        }
-                    }
-
-                    canvas.width = width;
-                    canvas.height = height;
+                    canvas.width = width; canvas.height = height;
                     var ctx = canvas.getContext('2d');
+                    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, width, height);
                     ctx.drawImage(img, 0, 0, width, height);
-                    
-                    var compressedDataUrl = canvas.toDataURL('image/jpeg', 0.7);
-                    callback(compressedDataUrl);
+                    callback(canvas.toDataURL('image/jpeg', 0.7));
                 };
                 img.src = e.target.result;
             };
             reader.readAsDataURL(file);
         }
 
-        function handleImgs(e) {
-            var files = e.target.files;
+        async function handleImgs(e) {
+            var input = e.target;
+            var files = Array.from(input.files || []);
             if (!files.length) return;
-            for (var i = 0; i < files.length; i++) {
-                compressImage(files[i], function(compressedResult) {
-                    currentTempImages.push(compressedResult);
-                    renderTempImagePreviews();
-                });
-            }
+            var results = await Promise.all(files.map(function(f) { return new Promise(function(res) { compressImage(f, res); }); }));
+            var failed = 0;
+            results.forEach(function(r) { if (r) currentTempImages.push(r); else failed++; });
+            input.value = '';
+            renderTempImagePreviews();
+            if (failed) alert(failed + " image(s) couldn't be read (unsupported format?) and were skipped.");
         }
 
         function renderTempImagePreviews() {
@@ -535,21 +553,6 @@
                 selectedCategories = ['General'];
             }
 
-            var fileInput = document.getElementById('imgs');
-            if (fileInput && fileInput.files && fileInput.files.length > 0) {
-                var filePromises = Array.from(fileInput.files).map(function(file) {
-                    return new Promise(function(resolve) {
-                        compressImage(file, function(compressed) {
-                            resolve(compressed);
-                        });
-                    });
-                });
-                var loadedImgs = await Promise.all(filePromises);
-                loadedImgs.forEach(function(img) {
-                    if (!currentTempImages.includes(img)) currentTempImages.push(img);
-                });
-            }
-
             var id = document.getElementById('watchId').value;
 
             var watchData = {
@@ -572,7 +575,7 @@
                 salePrice: document.getElementById('salePrice').value,
                 dateOfManufacture: document.getElementById('dateOfManufacture').value,
                 description: document.getElementById('description').value,
-                images: currentTempImages
+                images: currentTempImages.slice()
             };
 
             if (id) {
@@ -584,14 +587,16 @@
 
             await saveVaultData();
             closeModal();
+            renderCategoryFilters();
             render();
         }
     </script>
     <script>
         function openDetailModal(id) {
-            history.pushState({ modal: 'detail' }, '');
+            
             var w = watches.find(function(item) { return item.id === Number(id); });
             if (!w) return;
+            pushModalState();
 
             var titleStr = (w.brand || '') + (w.model ? ' ' + w.model : '');
             document.getElementById('detTitle').innerText = titleStr;
@@ -620,7 +625,7 @@
                 specSec.innerHTML = '<h4 class="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1 mt-3">Additional Specifications</h4>' +
                     '<div class="grid grid-cols-2 gap-1.5 bg-slate-950 p-3 rounded-2xl border border-slate-800/80 text-xs">' +
                     specsData.map(function(s) {
-                        return '<div><span class="text-slate-500 block uppercase text-[9px] font-bold">' + s.label + '</span><span class="text-slate-200">' + s.val + '</span></div>';
+                        return '<div><span class="text-slate-500 block uppercase text-[9px] font-bold">' + s.label + '</span><span class="text-slate-200">' + esc(s.val) + '</span></div>';
                     }).join('') + '</div>';
             } else {
                 specSec.innerHTML = '';
@@ -628,8 +633,9 @@
 
             var imgContainer = document.getElementById('detImagesContainer');
             if (w.images && w.images.length) {
-                imgContainer.innerHTML = w.images.map(function(img) {
-                    return '<img src="' + img + '" onclick="openLightbox(\'' + img + '\')" class="w-32 h-32 object-cover rounded-xl border border-slate-800 flex-shrink-0 cursor-pointer hover:opacity-90 transition-opacity" title="Tap to enlarge">';
+                currentDetailImages = w.images;
+                imgContainer.innerHTML = w.images.map(function(img, i) {
+                    return '<img src="' + esc(img) + '" onclick="openLightboxAt(' + i + ')" class="w-32 h-32 object-cover rounded-xl border border-slate-800 flex-shrink-0 cursor-pointer hover:opacity-90 transition-opacity" title="Tap to enlarge">';
                 }).join('');
                 imgContainer.classList.remove('hidden');
             } else {
@@ -647,13 +653,14 @@
         function closeDetailModal() {
             document.getElementById('detailModal').classList.add('hidden');
             document.getElementById('detailModal').classList.remove('flex');
-            if (window.history.state && window.history.state.modal === 'detail') {
-                history.back();
-            }
+            schedulePopModalState();
         }
 
+        var currentDetailImages = [];
+        function openLightboxAt(i) { if (currentDetailImages[i]) openLightbox(currentDetailImages[i]); }
+
         function openLightbox(imgSrc) {
-            history.pushState({ modal: 'lightbox' }, '');
+            pushModalState();
             document.getElementById('lightboxImg').src = imgSrc;
             var box = document.getElementById('lightboxModal');
             box.classList.remove('hidden');
@@ -664,9 +671,7 @@
             var box = document.getElementById('lightboxModal');
             box.classList.add('hidden');
             box.classList.remove('flex');
-            if (window.history.state && window.history.state.modal === 'lightbox') {
-                history.back();
-            }
+            schedulePopModalState();
         }
 
         function editWatch(id) {
@@ -676,9 +681,7 @@
                 return;
             }
 
-            if (!window.history.state || !window.history.state.modal) {
-                history.pushState({ modal: 'edit' }, '');
-            }
+            pushModalState();
 
             document.getElementById('modalTitle').innerText = 'Edit Watch';
             document.getElementById('watchId').value = w.id;
@@ -718,6 +721,7 @@
                 watches = watches.filter(function(w) { return w.id !== Number(id); });
                 await saveVaultData();
                 closeModal();
+                renderCategoryFilters();
                 render();
             }
         }
@@ -737,10 +741,11 @@
         }
 
         function openShareModal(id) {
-            history.pushState({ modal: 'share' }, '');
+            
             activeShareWatchId = Number(id);
             var w = watches.find(function(item) { return item.id === Number(id); });
             if (!w) return;
+            pushModalState();
             var box = document.getElementById('shareOptionsBox');
             var html = '';
             var items = [
@@ -754,7 +759,7 @@
             ];
             items.forEach(function(item) {
                 if (item.val && item.val !== '$N/A' && item.val !== 'N/A') {
-                    html += '<label class="flex items-center gap-2 cursor-pointer hover:text-white"><input type="checkbox" id="' + item.id + '" ' + (item.def ? 'checked' : '') + ' class="rounded accent-indigo-600"><span>' + item.label + ': ' + item.val + '</span></label>';
+                    html += '<label class="flex items-center gap-2 cursor-pointer hover:text-white"><input type="checkbox" id="' + item.id + '" ' + (item.def ? 'checked' : '') + ' class="rounded accent-indigo-600"><span>' + item.label + ': ' + esc(item.val) + '</span></label>';
                 }
             });
             box.innerHTML = html;
@@ -765,9 +770,7 @@
         function closeShareModal() {
             document.getElementById('shareModal').classList.add('hidden');
             document.getElementById('shareModal').classList.remove('flex');
-            if (window.history.state && window.history.state.modal === 'share') {
-                history.back();
-            }
+            schedulePopModalState();
         }
 
         function buildShareTextPayload() {
@@ -784,17 +787,23 @@
             return txt;
         }
 
+        function getShareWatch() {
+            return watches.find(function(item) { return item.id === Number(activeShareWatchId); });
+        }
+
         function executeShareText() {
-            var w = watches.find(function(item) { return item.id === Number(activeShareWatchId); });
+            var w = getShareWatch();
+            if (!w) return;
             var txt = buildShareTextPayload();
             closeShareModal();
             var titleStr = (w.brand || '') + (w.model ? ' ' + w.model : '');
-            if (navigator.share) navigator.share({ title: titleStr, text: txt });
+            if (navigator.share) navigator.share({ title: titleStr, text: txt }).catch(function() {});
             else prompt("Copy report to share:", txt);
         }
 
         function executeEmailReport() {
-            var w = watches.find(function(item) { return item.id === Number(activeShareWatchId); });
+            var w = getShareWatch();
+            if (!w) return;
             var txt = buildShareTextPayload();
             closeShareModal();
             var titleStr = (w.brand || '') + (w.model ? ' ' + w.model : '');
@@ -802,19 +811,23 @@
         }
 
         function executeGeneratePDF() {
-            var w = watches.find(function(item) { return item.id === Number(activeShareWatchId); });
+            var w = getShareWatch();
             if (!w) return;
             var titleStr = (w.brand || '') + (w.model ? ' ' + w.model : '');
+            var rows = [
+                ['Reference No.', w.refNumber],
+                ['Categories', w.categories ? w.categories.join(', ') : ''],
+                ['Estimated Value', w.currentValue ? '$' + Number(w.currentValue).toLocaleString() : ''],
+                ['Movement', w.movementType],
+                ['Serial Number', w.serialNumber]
+            ];
             var pdfHtml = '<div style="font-family:sans-serif; padding:20px; max-width:600px; margin:auto;">' +
                 '<h1 style="border-bottom:2px solid #cbd5e1; padding-bottom:8px; color:#0f172a;">Watch Vault Record Report</h1>' +
-                '<h2 style="color:#475569; margin-top:16px;">' + titleStr + '</h2>' +
-                '<p><strong>Reference No.:</strong> ' + (w.refNumber || 'N/A') + '</p>' +
-                '<p><strong>Categories:</strong> ' + (w.categories ? w.categories.join(', ') : 'N/A') + '</p>' +
-                '<p><strong>Estimated Value:</strong> $' + (w.currentValue || 'N/A') + '</p>' +
-                '<p><strong>Movement:</strong> ' + (w.movementType || 'N/A') + '</p>' +
-                '<p><strong>Serial Number:</strong> ' + (w.serialNumber || 'N/A') + '</p></div>';
+                '<h2 style="color:#475569; margin-top:16px;">' + esc(titleStr) + '</h2>' +
+                rows.map(function(r) { return '<p><strong>' + r[0] + ':</strong> ' + esc(r[1] || 'N/A') + '</p>'; }).join('') + '</div>';
             closeShareModal();
-            var win = window.open('', '', 'width=700,height=700');
+            var win = window.open('', '_blank', 'width=700,height=700');
+            if (!win) { alert('Pop-up blocked. Allow pop-ups for this site to print or save the report as PDF.'); return; }
             win.document.write('<html><head><title>Watch Report</title></head><body>' + pdfHtml + '</body></html>');
             win.document.close();
             win.focus();
@@ -822,40 +835,49 @@
         }
 
         function exportBackup() {
-            var dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify({ watches: watches, categories: allCategories }, null, 2));
+            var blob = new Blob([JSON.stringify({ watches: watches, categories: allCategories }, null, 2)], { type: 'application/json' });
+            var url = URL.createObjectURL(blob);
             var dl = document.createElement('a');
-            dl.setAttribute("href", dataStr);
-            dl.setAttribute("download", "watch_vault_backup_" + new Date().toISOString().slice(0, 10) + ".json");
+            dl.href = url;
+            dl.download = "watch_vault_backup_" + new Date().toISOString().slice(0, 10) + ".json";
             document.body.appendChild(dl);
             dl.click();
             dl.remove();
+            setTimeout(function() { URL.revokeObjectURL(url); }, 1000);
         }
 
         function importBackup(e) {
-            var file = e.target.files[0];
+            var input = e.target;
+            var file = input.files[0];
             if (!file) return;
             var reader = new FileReader();
             reader.onload = async function(evt) {
                 try {
                     var parsed = JSON.parse(evt.target.result);
-                    var importedWatches = Array.isArray(parsed) ? parsed : parsed.watches;
-                    var importedCats = parsed.categories;
-
-                    if (importedWatches && Array.isArray(importedWatches)) {
-                        if (confirm("Import " + importedWatches.length + " watches into your collection?")) {
-                            watches = importedWatches;
-                            if (importedCats && Array.isArray(importedCats)) {
-                                allCategories = importedCats;
-                            }
-                            await saveVaultData();
-                            renderCategoryFilters();
-                            render();
-                            alert("Collection imported!");
-                        }
+                    var raw = Array.isArray(parsed) ? parsed : parsed.watches;
+                    if (!Array.isArray(raw)) throw new Error('No watches array');
+                    var imported = raw.map(normalizeWatch).filter(Boolean);
+                    var cats = (!Array.isArray(parsed) && Array.isArray(parsed.categories)) ? parsed.categories.map(String).filter(Boolean) : [];
+                    var replace = confirm("Import " + imported.length + " watches.\n\nOK = REPLACE your current collection\nCancel = choose merge instead");
+                    if (!replace && !confirm("Merge these watches into your current collection? (Same-ID watches are updated.)")) return;
+                    if (replace) {
+                        watches = imported;
+                        if (cats.length) allCategories = cats;
+                    } else {
+                        var map = {}, seen = {}, merged = [];
+                        watches.concat(imported).forEach(function(w) { map[w.id] = w; });
+                        watches.concat(imported).forEach(function(w) { if (!seen[w.id]) { seen[w.id] = 1; merged.push(map[w.id]); } });
+                        watches = merged;
+                        cats.forEach(function(c) { if (allCategories.indexOf(c) === -1) allCategories.push(c); });
                     }
+                    var ok = await saveVaultData();
+                    renderCategoryFilters();
+                    render();
+                    if (ok) alert("Collection imported!");
                 } catch (err) { alert("Invalid JSON backup file format."); }
             };
             reader.readAsText(file);
+            input.value = '';
         }
 
         function render() {
@@ -878,11 +900,11 @@
             }
 
             list.innerHTML = filtered.map(function(w, idx) {
-                var imgCover = (w.images && w.images.length) ? '<img src="' + w.images[0] + '" class="w-full h-44 object-cover cursor-pointer" onclick="openDetailModal(' + w.id + ')">' : '';
-                var displayTitle = (w.brand || '') + (w.model ? ' ' + w.model : '');
+                var imgCover = (w.images && w.images.length) ? '<img src="' + esc(w.images[0]) + '" class="w-full h-44 object-cover cursor-pointer" onclick="openDetailModal(' + w.id + ')">' : '';
+                var displayTitle = esc((w.brand || '') + (w.model ? ' ' + w.model : ''));
                 
                 var categoryBadges = w.categories ? w.categories.map(function(c) {
-                    return '<span class="bg-indigo-950/80 text-indigo-300 text-[10px] font-bold px-2 py-0.5 rounded-full border border-indigo-800/50">' + c + '</span>';
+                    return '<span class="bg-indigo-950/80 text-indigo-300 text-[10px] font-bold px-2 py-0.5 rounded-full border border-indigo-800/50">' + esc(c) + '</span>';
                 }).join('') : '<span class="bg-indigo-950/80 text-indigo-300 text-[10px] font-bold px-2.5 py-1 rounded-full border border-indigo-800/50">General</span>';
 
                 var moveButtons = activeCategoryFilter === 'All' ? 
@@ -899,8 +921,8 @@
                             '<div class="flex flex-wrap gap-1 justify-end">' + categoryBadges + '</div>' +
                         '</div>' +
                         '<h3 class="text-base font-bold text-white hover:text-indigo-400">' + displayTitle + '</h3>' +
-                        (w.refNumber ? '<p class="text-xs text-indigo-300/80 font-mono">Ref: ' + w.refNumber + '</p>' : '') +
-                        '<p class="text-xs text-slate-400 leading-relaxed line-clamp-2">' + (w.description || 'No description provided.') + '</p>' +
+                        (w.refNumber ? '<p class="text-xs text-indigo-300/80 font-mono">Ref: ' + esc(w.refNumber) + '</p>' : '') +
+                        '<p class="text-xs text-slate-400 leading-relaxed line-clamp-2">' + esc(w.description || 'No description provided.') + '</p>' +
                     '</div>' +
                     '<div class="flex justify-between items-center px-4 pb-4 pt-2 border-t border-slate-800/80">' +
                         '<div class="flex gap-1.5 items-center">' +
