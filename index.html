@@ -932,22 +932,44 @@
             var sel = getShareItems(w).filter(function(it) { return isShareChecked(it.id); });
             var withPhotos = isShareChecked('sb_photos');
             if (!sel.length && !withPhotos) { alert('Select at least one item to include.'); return; }
-            var titleItem = sel.filter(function(it) { return it.id === 'sb_brand'; })[0];
-            var rows = sel.filter(function(it) { return it.id !== 'sb_brand'; });
+            var byId = {};
+            sel.forEach(function(it) { byId[it.id] = it; });
+            function cell(label, val, cls) {
+                return '<div class="c"><div class="l">' + esc(label) + '</div><div class="v ' + (cls || '') + '">' + esc(val) + '</div></div>';
+            }
+            var topDefs = [['sb_val', 'Estimated Value', 'g'], ['sb_mov', 'Movement', ''], ['sb_ref', 'Reference No.', 'm'], ['sb_sn', 'Serial Number', 'm']];
+            var topHtml = topDefs.map(function(d) { return byId[d[0]] ? cell(d[1], byId[d[0]].val, d[2]) : ''; }).join('');
+            var skip = ['sb_brand', 'sb_desc', 'sb_val', 'sb_mov', 'sb_ref', 'sb_sn'];
+            var specHtml = sel.filter(function(it) { return skip.indexOf(it.id) === -1; }).map(function(it) { return cell(it.label, it.val, ''); }).join('');
             var imgs = withPhotos ? (w.images || []) : [];
-            var imgHtml = imgs.length ? '<h3 style="color:#475569; margin-top:20px;">Photos</h3><div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">' +
-                imgs.map(function(src, i) {
-                    return '<img src="' + esc(src) + '" style="width:100%; border-radius:6px; border:1px solid #cbd5e1; page-break-inside:avoid;' + (i === 0 ? ' grid-column:1 / -1;' : '') + '">';
-                }).join('') + '</div>' : '';
-            var pdfHtml = '<div style="font-family:sans-serif; padding:20px; max-width:600px; margin:auto;">' +
-                '<h1 style="border-bottom:2px solid #cbd5e1; padding-bottom:8px; color:#0f172a;">Watch Vault Record Report</h1>' +
-                (titleItem ? '<h2 style="color:#475569; margin-top:16px;">' + esc(titleItem.val) + '</h2>' : '') +
-                rows.map(function(r) { return '<p><strong>' + esc(r.label) + ':</strong> ' + esc(r.val).replace(/\n/g, '<br>') + '</p>'; }).join('') +
-                imgHtml + '</div>';
+
+            var css = '@page{margin:0}*{box-sizing:border-box}' +
+                'html,body{margin:0;background:#0f172a;color:#e2e8f0;font-family:-apple-system,Roboto,Helvetica,Arial,sans-serif;-webkit-print-color-adjust:exact;print-color-adjust:exact}' +
+                '.wrap{max-width:640px;margin:0 auto;padding:28px 24px}' +
+                '.cover{display:block;width:100%;height:300px;object-fit:cover;border-radius:18px;border:1px solid #1e293b}' +
+                'h1{color:#fff;font-size:26px;margin:18px 0 16px;break-after:avoid}' +
+                '.h{color:#64748b;font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;margin:22px 0 8px;break-after:avoid}' +
+                '.box{background:#020617;border:1px solid #1e293b;border-radius:18px;padding:16px 18px;display:grid;grid-template-columns:1fr 1fr;gap:14px 20px;break-inside:avoid}' +
+                '.l{color:#64748b;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;margin-bottom:3px}' +
+                '.v{font-size:15px;color:#e2e8f0;word-break:break-word}.g{color:#34d399;font-weight:700;font-size:18px}' +
+                '.m{font-family:ui-monospace,Menlo,Consolas,monospace}.note{display:block;white-space:pre-wrap}' +
+                '.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}' +
+                '.grid img{width:100%;height:190px;object-fit:cover;border-radius:12px;border:1px solid #1e293b;break-inside:avoid}' +
+                '.foot{color:#475569;font-size:10px;text-align:center;margin-top:26px}';
+
+            var body = '<div class="wrap">' +
+                (imgs.length ? '<img class="cover" src="' + esc(imgs[0]) + '">' : '') +
+                (byId.sb_brand ? '<h1>' + esc(byId.sb_brand.val) + '</h1>' : '') +
+                (topHtml ? '<div class="box">' + topHtml + '</div>' : '') +
+                (specHtml ? '<div class="h">Additional Specifications</div><div class="box">' + specHtml + '</div>' : '') +
+                (byId.sb_desc ? '<div class="h">Notes</div><div class="box" style="display:block"><span class="v note">' + esc(byId.sb_desc.val) + '</span></div>' : '') +
+                (imgs.length > 1 ? '<div class="h">Photos</div><div class="grid">' + imgs.slice(1).map(function(src) { return '<img src="' + esc(src) + '">'; }).join('') + '</div>' : '') +
+                '<div class="foot">Watch Vault &middot; ' + new Date().toLocaleDateString() + '</div></div>';
+
             closeShareModal();
-            var win = window.open('', '_blank', 'width=700,height=700');
+            var win = window.open('', '_blank', 'width=700,height=900');
             if (!win) { alert('Pop-up blocked. Allow pop-ups for this site to print or save the report as PDF.'); return; }
-            win.document.write('<html><head><title>Watch Report</title></head><body>' + pdfHtml + '</body></html>');
+            win.document.write('<html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Watch Report</title><style>' + css + '</style></head><body>' + body + '</body></html>');
             win.document.close();
             var els = Array.from(win.document.images), pending = els.length, printed = false;
             function go() { if (printed) return; printed = true; win.focus(); win.print(); }
