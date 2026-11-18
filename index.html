@@ -238,9 +238,9 @@
 
     <!-- Share Modal -->
     <div id="shareModal" class="hidden fixed inset-0 bg-black/80 backdrop-blur-sm z-50 items-center justify-center p-4">
-        <div class="bg-slate-900 border border-slate-800 text-slate-100 rounded-3xl w-full max-w-sm p-6 shadow-2xl space-y-4">
+        <div class="bg-slate-900 border border-slate-800 text-slate-100 rounded-3xl w-full max-w-sm max-h-[90vh] overflow-y-auto p-6 shadow-2xl space-y-4">
             <h3 class="text-base font-bold text-white">Share / Export Options</h3>
-            <div id="shareOptionsBox" class="space-y-2 max-h-48 overflow-y-auto text-xs text-slate-300 pr-1"></div>
+            <div id="shareOptionsBox" class="space-y-2 max-h-60 overflow-y-auto text-xs text-slate-300 pr-1"></div>
             <div class="flex flex-col gap-2 pt-2">
                 <button type="button" onclick="executeShareText()" class="w-full bg-slate-800 hover:bg-slate-700 text-white font-semibold text-xs py-2.5 rounded-xl">Share Text (SMS / App)</button>
                 <button type="button" onclick="executeEmailReport()" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs py-2.5 rounded-xl">Email Details</button>
@@ -827,30 +827,62 @@
             render();
         }
 
+        function shareMoney(v) {
+            if (!v) return '';
+            return isNaN(Number(v)) ? String(v) : '$' + Number(v).toLocaleString();
+        }
+
+        var SHARE_FIELDS = [
+            { id: 'brand', label: 'Watch Name', def: true, get: function(w) { return (w.brand || '') + (w.model ? ' ' + w.model : ''); } },
+            { id: 'ref', label: 'Ref No.', def: true, get: function(w) { return w.refNumber; } },
+            { id: 'cat', label: 'Categories', def: true, get: function(w) { return w.categories ? w.categories.join(', ') : ''; } },
+            { id: 'val', label: 'Estimated Value', def: true, get: function(w) { return shareMoney(w.currentValue); } },
+            { id: 'mov', label: 'Movement', def: true, get: function(w) { return w.movementType; } },
+            { id: 'sn', label: 'Serial No.', def: false, get: function(w) { return w.serialNumber; } },
+            { id: 'case', label: 'Case Size', def: true, get: function(w) { return w.caseSize; } },
+            { id: 'lug', label: 'Lug Width', def: true, get: function(w) { return w.lugWidth; } },
+            { id: 'crys', label: 'Crystal', def: true, get: function(w) { return w.crystalType; } },
+            { id: 'band', label: 'Band Material', def: true, get: function(w) { return w.bandMaterial; } },
+            { id: 'wr', label: 'Water Resistance', def: true, get: function(w) { return w.waterResistance; } },
+            { id: 'cmat', label: 'Case Material', def: true, get: function(w) { return w.caseMaterial; } },
+            { id: 'pdate', label: 'Purchase Date', def: false, get: function(w) { return w.purchaseDate; } },
+            { id: 'pprice', label: 'Purchase Price', def: false, get: function(w) { return shareMoney(w.purchasePrice); } },
+            { id: 'sprice', label: 'Sale Price', def: false, get: function(w) { return shareMoney(w.salePrice); } },
+            { id: 'mfg', label: 'Mfg Date', def: true, get: function(w) { return w.dateOfManufacture; } }
+        ];
+
+        function getShareItems(w) {
+            var items = SHARE_FIELDS.map(function(f) { return { id: 'sb_' + f.id, label: f.label, val: f.get(w), def: f.def }; });
+            customFieldDefs.forEach(function(n, i) { items.push({ id: 'sb_cf_' + i, label: n, val: (w.customFields || {})[n], def: true }); });
+            items.push({ id: 'sb_desc', label: 'Notes', val: w.description, def: false });
+            return items.filter(function(it) { return it.val; });
+        }
+
+        function isShareChecked(id) {
+            var el = document.getElementById(id);
+            return !!(el && el.checked);
+        }
+
+        function toggleAllShare(on) {
+            document.querySelectorAll('#shareOptionsBox input[type=checkbox]').forEach(function(cb) { cb.checked = on; });
+        }
+
         function openShareModal(id) {
-            
             activeShareWatchId = Number(id);
             var w = watches.find(function(item) { return item.id === Number(id); });
             if (!w) return;
             pushModalState();
-            var box = document.getElementById('shareOptionsBox');
-            var html = '';
-            var items = [
-                { id: 'sb_brand', label: 'Watch Name', val: (w.brand || '') + (w.model ? ' ' + w.model : ''), def: true },
-                { id: 'sb_ref', label: 'Ref No.', val: w.refNumber, def: true },
-                { id: 'sb_cat', label: 'Categories', val: w.categories ? w.categories.join(', ') : '', def: true },
-                { id: 'sb_val', label: 'Estimated Value', val: '$' + (w.currentValue || 'N/A'), def: true },
-                { id: 'sb_mov', label: 'Movement', val: w.movementType, def: true },
-                { id: 'sb_sn', label: 'Serial No.', val: w.serialNumber, def: false },
-                { id: 'sb_desc', label: 'Notes', val: w.description, def: false }
-            ];
-            customFieldDefs.forEach(function(n, i) { items.push({ id: 'sb_cf_' + i, label: n, val: (w.customFields || {})[n], def: false }); });
-            items.forEach(function(item) {
-                if (item.val && item.val !== '$N/A' && item.val !== 'N/A') {
-                    html += '<label class="flex items-center gap-2 cursor-pointer hover:text-white"><input type="checkbox" id="' + item.id + '" ' + (item.def ? 'checked' : '') + ' class="rounded accent-indigo-600"><span>' + esc(item.label) + ': ' + esc(item.val) + '</span></label>';
-                }
+            var rowCls = 'flex items-start gap-2 cursor-pointer hover:text-white';
+            var html = '<div class="flex gap-4 text-[10px] font-semibold pb-1"><button type="button" onclick="toggleAllShare(true)" class="text-indigo-400">Select all</button><button type="button" onclick="toggleAllShare(false)" class="text-slate-400">Clear all</button></div>';
+            getShareItems(w).forEach(function(item) {
+                var v = String(item.val);
+                if (v.length > 60) v = v.slice(0, 60) + '…';
+                html += '<label class="' + rowCls + '"><input type="checkbox" id="' + item.id + '" ' + (item.def ? 'checked' : '') + ' class="rounded accent-indigo-600 mt-0.5"><span>' + esc(item.label) + ': ' + esc(v) + '</span></label>';
             });
-            box.innerHTML = html;
+            if (w.images && w.images.length) {
+                html += '<label class="' + rowCls + '"><input type="checkbox" id="sb_photos" checked class="rounded accent-indigo-600 mt-0.5"><span>Photos (' + w.images.length + ') — PDF only</span></label>';
+            }
+            document.getElementById('shareOptionsBox').innerHTML = html;
             document.getElementById('shareModal').classList.remove('hidden');
             document.getElementById('shareModal').classList.add('flex');
         }
@@ -865,14 +897,9 @@
             var w = watches.find(function(item) { return item.id === Number(activeShareWatchId); });
             if (!w) return '';
             var txt = "⌚ Watch Details Report\n";
-            if (document.getElementById('sb_brand') && document.getElementById('sb_brand').checked) txt += "Watch: " + (w.brand || '') + (w.model ? ' ' + w.model : '') + "\n";
-            if (document.getElementById('sb_ref') && document.getElementById('sb_ref').checked) txt += "Ref No.: " + (w.refNumber || 'N/A') + "\n";
-            if (document.getElementById('sb_cat') && document.getElementById('sb_cat').checked) txt += "Categories: " + (w.categories ? w.categories.join(', ') : '') + "\n";
-            if (document.getElementById('sb_val') && document.getElementById('sb_val').checked) txt += "Est. Value: $" + (w.currentValue || 'N/A') + "\n";
-            if (document.getElementById('sb_mov') && document.getElementById('sb_mov').checked) txt += "Movement: " + (w.movementType || 'N/A') + "\n";
-            if (document.getElementById('sb_sn') && document.getElementById('sb_sn').checked) txt += "Serial: " + (w.serialNumber || 'N/A') + "\n";
-            if (document.getElementById('sb_desc') && document.getElementById('sb_desc').checked) txt += "Notes: " + (w.description || 'None') + "\n";
-            customFieldDefs.forEach(function(n, i) { var cb = document.getElementById('sb_cf_' + i); if (cb && cb.checked) txt += n + ": " + ((w.customFields || {})[n] || '') + "\n"; });
+            getShareItems(w).forEach(function(it) {
+                if (isShareChecked(it.id)) txt += it.label + ": " + it.val + "\n";
+            });
             return txt;
         }
 
@@ -902,24 +929,20 @@
         function executeGeneratePDF() {
             var w = getShareWatch();
             if (!w) return;
-            var titleStr = (w.brand || '') + (w.model ? ' ' + w.model : '');
-            var rows = [
-                ['Reference No.', w.refNumber],
-                ['Categories', w.categories ? w.categories.join(', ') : ''],
-                ['Estimated Value', w.currentValue ? '$' + Number(w.currentValue).toLocaleString() : ''],
-                ['Movement', w.movementType],
-                ['Serial Number', w.serialNumber]
-            ];
-            customFieldDefs.forEach(function(n) { var v = (w.customFields || {})[n]; if (v) rows.push([esc(n), v]); });
-            var imgs = w.images || [];
+            var sel = getShareItems(w).filter(function(it) { return isShareChecked(it.id); });
+            var withPhotos = isShareChecked('sb_photos');
+            if (!sel.length && !withPhotos) { alert('Select at least one item to include.'); return; }
+            var titleItem = sel.filter(function(it) { return it.id === 'sb_brand'; })[0];
+            var rows = sel.filter(function(it) { return it.id !== 'sb_brand'; });
+            var imgs = withPhotos ? (w.images || []) : [];
             var imgHtml = imgs.length ? '<h3 style="color:#475569; margin-top:20px;">Photos</h3><div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">' +
                 imgs.map(function(src, i) {
                     return '<img src="' + esc(src) + '" style="width:100%; border-radius:6px; border:1px solid #cbd5e1; page-break-inside:avoid;' + (i === 0 ? ' grid-column:1 / -1;' : '') + '">';
                 }).join('') + '</div>' : '';
             var pdfHtml = '<div style="font-family:sans-serif; padding:20px; max-width:600px; margin:auto;">' +
                 '<h1 style="border-bottom:2px solid #cbd5e1; padding-bottom:8px; color:#0f172a;">Watch Vault Record Report</h1>' +
-                '<h2 style="color:#475569; margin-top:16px;">' + esc(titleStr) + '</h2>' +
-                rows.map(function(r) { return '<p><strong>' + r[0] + ':</strong> ' + esc(r[1] || 'N/A') + '</p>'; }).join('') +
+                (titleItem ? '<h2 style="color:#475569; margin-top:16px;">' + esc(titleItem.val) + '</h2>' : '') +
+                rows.map(function(r) { return '<p><strong>' + esc(r.label) + ':</strong> ' + esc(r.val).replace(/\n/g, '<br>') + '</p>'; }).join('') +
                 imgHtml + '</div>';
             closeShareModal();
             var win = window.open('', '_blank', 'width=700,height=700');
