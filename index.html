@@ -171,6 +171,13 @@
                     <textarea id="description" rows="2" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-indigo-500"></textarea>
                 </div>
                 <div>
+                    <div class="flex justify-between items-center mb-1">
+                        <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-400">Custom Fields</label>
+                        <button type="button" onclick="addCustomFieldPrompt()" class="text-indigo-400 hover:text-indigo-300 text-[10px] font-semibold">+ Add Custom Field</button>
+                    </div>
+                    <div id="customFieldsContainer" class="space-y-2"></div>
+                </div>
+                <div>
                     <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Images (First image is cover)</label>
                     <input type="file" id="imgs" accept="image/*" multiple onchange="handleImgs(event)" class="w-full text-xs text-slate-400 file:mr-2 file:py-1 file:px-3 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-indigo-600 file:text-white hover:file:bg-indigo-500">
                     <div id="imagePreviewContainer" class="flex gap-2 overflow-x-auto py-2"></div>
@@ -259,6 +266,7 @@
         var currentTempImages = [];
         var activeCategoryFilter = 'All';
         var activeShareWatchId = null;
+        var customFieldDefs = [];
 
         function esc(s) {
             return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
@@ -274,6 +282,9 @@
             var out = Object.assign({}, w);
             out.id = id;
             out.categories = cats;
+            var cf = {};
+            if (w.customFields && typeof w.customFields === 'object') Object.keys(w.customFields).forEach(function(k) { cf[k] = String(w.customFields[k]); });
+            out.customFields = cf;
             out.images = Array.isArray(w.images) ? w.images.filter(function(u) { return typeof u === 'string' && /^(data:image\/|https?:\/\/)/i.test(u); }) : [];
             return out;
         }
@@ -335,6 +346,8 @@
 
                 tx.oncomplete = function() { db.close(); };
                 var store = tx.objectStore('vault');
+                var fReq = store.get('custom_fields');
+                fReq.onsuccess = function() { if (Array.isArray(fReq.result)) customFieldDefs = fReq.result; };
                 var req = store.get('watch_collection');
                 req.onsuccess = function() {
                     var data = req.result;
@@ -373,6 +386,7 @@
                     var tx = db.transaction(['vault', 'categories'], 'readwrite');
                     tx.objectStore('vault').put(watches, 'watch_collection');
                     tx.objectStore('categories').put(allCategories, 'cat_list');
+                    tx.objectStore('vault').put(customFieldDefs, 'custom_fields');
                     tx.oncomplete = function() { db.close(); resolve(); };
                     tx.onerror = tx.onabort = function() { db.close(); reject(tx.error); };
                 });
@@ -416,6 +430,7 @@
             currentTempImages = [];
             renderTempImagePreviews();
             renderCategoryCheckboxes([]);
+            renderCustomFields({});
             document.getElementById('modalDeleteBtn').classList.add('hidden');
             document.getElementById('watchModal').classList.remove('hidden');
             document.getElementById('watchModal').classList.add('flex');
@@ -438,6 +453,56 @@
                     '<input type="checkbox" name="watchCategory" value="' + esc(cat) + '" ' + isChecked + ' class="rounded accent-indigo-600"><span>' + esc(cat) + '</span>' +
                 '</label>';
             }).join('');
+        }
+
+        function readCustomFieldValues() {
+            var out = {};
+            document.querySelectorAll('#customFieldsContainer input[data-cf]').forEach(function(inp) {
+                var v = inp.value.trim();
+                if (v) out[inp.dataset.cf] = v;
+            });
+            return out;
+        }
+
+        function renderCustomFields(values) {
+            values = values || {};
+            var c = document.getElementById('customFieldsContainer');
+            if (!c) return;
+            if (!customFieldDefs.length) {
+                c.innerHTML = '<p class="text-[10px] text-slate-500">No custom fields yet. Tap "+ Add Custom Field" to create one.</p>';
+                return;
+            }
+            c.innerHTML = customFieldDefs.map(function(name, i) {
+                return '<div><div class="flex justify-between items-center mb-1">' +
+                    '<label class="block text-[10px] font-bold uppercase tracking-wider text-slate-400">' + esc(name) + '</label>' +
+                    '<button type="button" onclick="removeCustomField(' + i + ')" class="text-red-400 hover:text-red-300 text-[10px] font-semibold">Remove field</button></div>' +
+                    '<input type="text" data-cf="' + esc(name) + '" value="' + esc(values[name] || '') + '" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-indigo-500"></div>';
+            }).join('');
+        }
+
+        function addCustomFieldPrompt() {
+            var name = prompt("Enter new field name (e.g. Warranty Expiry):");
+            if (!name) return;
+            name = name.trim().slice(0, 40);
+            if (!name) return;
+            if (customFieldDefs.some(function(n) { return n.toLowerCase() === name.toLowerCase(); })) { alert("That field already exists."); return; }
+            var values = readCustomFieldValues();
+            customFieldDefs.push(name);
+            saveVaultData();
+            renderCustomFields(values);
+        }
+
+        async function removeCustomField(i) {
+            var name = customFieldDefs[i];
+            if (name === undefined) return;
+            if (!confirm('Remove the field "' + name + '"? Its saved values will be deleted from ALL watches.')) return;
+            var values = readCustomFieldValues();
+            delete values[name];
+            customFieldDefs.splice(i, 1);
+            watches.forEach(function(w) { if (w.customFields) delete w.customFields[name]; });
+            await saveVaultData();
+            renderCustomFields(values);
+            render();
         }
 
         function addNewCategoryPrompt() {
@@ -576,6 +641,7 @@
                 salePrice: document.getElementById('salePrice').value,
                 dateOfManufacture: document.getElementById('dateOfManufacture').value,
                 description: document.getElementById('description').value,
+                customFields: readCustomFieldValues(),
                 images: currentTempImages.slice()
             };
 
@@ -620,13 +686,13 @@
                 { label: 'Purchase Price', val: w.purchasePrice ? '$' + Number(w.purchasePrice).toLocaleString() : null },
                 { label: 'Sale Price', val: w.salePrice ? '$' + Number(w.salePrice).toLocaleString() : null },
                 { label: 'Mfg Date', val: w.dateOfManufacture }
-            ].filter(function(s) { return s.val; });
+            ].concat(customFieldDefs.map(function(n) { return { label: n, val: (w.customFields || {})[n] }; })).filter(function(s) { return s.val; });
 
             if (specsData.length) {
                 specSec.innerHTML = '<h4 class="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1 mt-3">Additional Specifications</h4>' +
                     '<div class="grid grid-cols-2 gap-1.5 bg-slate-950 p-3 rounded-2xl border border-slate-800/80 text-xs">' +
                     specsData.map(function(s) {
-                        return '<div><span class="text-slate-500 block uppercase text-[9px] font-bold">' + s.label + '</span><span class="text-slate-200">' + esc(s.val) + '</span></div>';
+                        return '<div><span class="text-slate-500 block uppercase text-[9px] font-bold">' + esc(s.label) + '</span><span class="text-slate-200">' + esc(s.val) + '</span></div>';
                     }).join('') + '</div>';
             } else {
                 specSec.innerHTML = '';
@@ -724,6 +790,7 @@
             document.getElementById('description').value = w.description || '';
 
             renderCategoryCheckboxes(w.categories || []);
+            renderCustomFields(w.customFields);
 
             currentTempImages = w.images ? [...w.images] : [];
             renderTempImagePreviews();
@@ -777,9 +844,10 @@
                 { id: 'sb_sn', label: 'Serial No.', val: w.serialNumber, def: false },
                 { id: 'sb_desc', label: 'Notes', val: w.description, def: false }
             ];
+            customFieldDefs.forEach(function(n, i) { items.push({ id: 'sb_cf_' + i, label: n, val: (w.customFields || {})[n], def: false }); });
             items.forEach(function(item) {
                 if (item.val && item.val !== '$N/A' && item.val !== 'N/A') {
-                    html += '<label class="flex items-center gap-2 cursor-pointer hover:text-white"><input type="checkbox" id="' + item.id + '" ' + (item.def ? 'checked' : '') + ' class="rounded accent-indigo-600"><span>' + item.label + ': ' + esc(item.val) + '</span></label>';
+                    html += '<label class="flex items-center gap-2 cursor-pointer hover:text-white"><input type="checkbox" id="' + item.id + '" ' + (item.def ? 'checked' : '') + ' class="rounded accent-indigo-600"><span>' + esc(item.label) + ': ' + esc(item.val) + '</span></label>';
                 }
             });
             box.innerHTML = html;
@@ -804,6 +872,7 @@
             if (document.getElementById('sb_mov') && document.getElementById('sb_mov').checked) txt += "Movement: " + (w.movementType || 'N/A') + "\n";
             if (document.getElementById('sb_sn') && document.getElementById('sb_sn').checked) txt += "Serial: " + (w.serialNumber || 'N/A') + "\n";
             if (document.getElementById('sb_desc') && document.getElementById('sb_desc').checked) txt += "Notes: " + (w.description || 'None') + "\n";
+            customFieldDefs.forEach(function(n, i) { var cb = document.getElementById('sb_cf_' + i); if (cb && cb.checked) txt += n + ": " + ((w.customFields || {})[n] || '') + "\n"; });
             return txt;
         }
 
@@ -841,6 +910,7 @@
                 ['Movement', w.movementType],
                 ['Serial Number', w.serialNumber]
             ];
+            customFieldDefs.forEach(function(n) { var v = (w.customFields || {})[n]; if (v) rows.push([esc(n), v]); });
             var imgs = w.images || [];
             var imgHtml = imgs.length ? '<h3 style="color:#475569; margin-top:20px;">Photos</h3><div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">' +
                 imgs.map(function(src, i) {
@@ -865,7 +935,7 @@
         }
 
         function exportBackup() {
-            var blob = new Blob([JSON.stringify({ watches: watches, categories: allCategories }, null, 2)], { type: 'application/json' });
+            var blob = new Blob([JSON.stringify({ watches: watches, categories: allCategories, customFields: customFieldDefs }, null, 2)], { type: 'application/json' });
             var url = URL.createObjectURL(blob);
             var dl = document.createElement('a');
             dl.href = url;
@@ -888,17 +958,21 @@
                     if (!Array.isArray(raw)) throw new Error('No watches array');
                     var imported = raw.map(normalizeWatch).filter(Boolean);
                     var cats = (!Array.isArray(parsed) && Array.isArray(parsed.categories)) ? parsed.categories.map(String).filter(Boolean) : [];
+                    var cfs = (!Array.isArray(parsed) && Array.isArray(parsed.customFields)) ? parsed.customFields.map(String).filter(Boolean) : [];
+                    imported.forEach(function(w) { Object.keys(w.customFields || {}).forEach(function(k) { if (cfs.indexOf(k) === -1) cfs.push(k); }); });
                     var replace = confirm("Import " + imported.length + " watches.\n\nOK = REPLACE your current collection\nCancel = choose merge instead");
                     if (!replace && !confirm("Merge these watches into your current collection? (Same-ID watches are updated.)")) return;
                     if (replace) {
                         watches = imported;
                         if (cats.length) allCategories = cats;
+                        customFieldDefs = cfs;
                     } else {
                         var map = {}, seen = {}, merged = [];
                         watches.concat(imported).forEach(function(w) { map[w.id] = w; });
                         watches.concat(imported).forEach(function(w) { if (!seen[w.id]) { seen[w.id] = 1; merged.push(map[w.id]); } });
                         watches = merged;
                         cats.forEach(function(c) { if (allCategories.indexOf(c) === -1) allCategories.push(c); });
+                        cfs.forEach(function(f) { if (customFieldDefs.indexOf(f) === -1) customFieldDefs.push(f); });
                     }
                     var ok = await saveVaultData();
                     renderCategoryFilters();
