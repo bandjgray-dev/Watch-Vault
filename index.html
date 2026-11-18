@@ -821,17 +821,27 @@
                 ['Movement', w.movementType],
                 ['Serial Number', w.serialNumber]
             ];
+            var imgs = w.images || [];
+            var imgHtml = imgs.length ? '<h3 style="color:#475569; margin-top:20px;">Photos</h3><div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">' +
+                imgs.map(function(src, i) {
+                    return '<img src="' + esc(src) + '" style="width:100%; border-radius:6px; border:1px solid #cbd5e1; page-break-inside:avoid;' + (i === 0 ? ' grid-column:1 / -1;' : '') + '">';
+                }).join('') + '</div>' : '';
             var pdfHtml = '<div style="font-family:sans-serif; padding:20px; max-width:600px; margin:auto;">' +
                 '<h1 style="border-bottom:2px solid #cbd5e1; padding-bottom:8px; color:#0f172a;">Watch Vault Record Report</h1>' +
                 '<h2 style="color:#475569; margin-top:16px;">' + esc(titleStr) + '</h2>' +
-                rows.map(function(r) { return '<p><strong>' + r[0] + ':</strong> ' + esc(r[1] || 'N/A') + '</p>'; }).join('') + '</div>';
+                rows.map(function(r) { return '<p><strong>' + r[0] + ':</strong> ' + esc(r[1] || 'N/A') + '</p>'; }).join('') +
+                imgHtml + '</div>';
             closeShareModal();
             var win = window.open('', '_blank', 'width=700,height=700');
             if (!win) { alert('Pop-up blocked. Allow pop-ups for this site to print or save the report as PDF.'); return; }
             win.document.write('<html><head><title>Watch Report</title></head><body>' + pdfHtml + '</body></html>');
             win.document.close();
-            win.focus();
-            setTimeout(function() { win.print(); }, 500);
+            var els = Array.from(win.document.images), pending = els.length, printed = false;
+            function go() { if (printed) return; printed = true; win.focus(); win.print(); }
+            function check() { if (--pending <= 0) setTimeout(go, 200); }
+            if (!pending) { setTimeout(go, 300); return; }
+            els.forEach(function(im) { if (im.complete) check(); else { im.onload = check; im.onerror = check; } });
+            setTimeout(go, 8000);
         }
 
         function exportBackup() {
