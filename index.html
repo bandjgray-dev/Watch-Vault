@@ -193,7 +193,8 @@
             </div>
             
             <!-- Image Carousel / Gallery -->
-            <div id="detImagesContainer" class="flex gap-2 overflow-x-auto no-scrollbar py-1"></div>
+            <div id="detImagesContainer" class="flex overflow-x-auto snap-x snap-mandatory no-scrollbar rounded-2xl border border-slate-800"></div>
+            <div id="detDots" class="flex justify-center gap-2 -mt-1"></div>
 
             <!-- Make & Model positioned above value section -->
             <div>
@@ -635,12 +636,17 @@
             if (w.images && w.images.length) {
                 currentDetailImages = w.images;
                 imgContainer.innerHTML = w.images.map(function(img, i) {
-                    return '<img src="' + esc(img) + '" onclick="openLightboxAt(' + i + ')" class="w-32 h-32 object-cover rounded-xl border border-slate-800 flex-shrink-0 cursor-pointer hover:opacity-90 transition-opacity" title="Tap to enlarge">';
+                    return '<img src="' + esc(img) + '" onclick="openLightboxAt(' + i + ')" class="w-full h-64 object-cover flex-shrink-0 snap-center cursor-pointer" title="Tap to enlarge">';
                 }).join('');
                 imgContainer.classList.remove('hidden');
+                imgContainer.scrollLeft = 0;
+                updateDetailDots(0);
+                imgContainer.onscroll = function() { updateDetailDots(Math.round(imgContainer.scrollLeft / imgContainer.clientWidth)); };
             } else {
                 imgContainer.innerHTML = '';
                 imgContainer.classList.add('hidden');
+                currentDetailImages = [];
+                updateDetailDots(0);
             }
 
             document.getElementById('detEditBtn').onclick = function() { closeDetailModal(); editWatch(w.id); };
@@ -657,6 +663,20 @@
         }
 
         var currentDetailImages = [];
+        function updateDetailDots(active) {
+            var d = document.getElementById('detDots');
+            var n = currentDetailImages.length;
+            if (n < 2) { d.innerHTML = ''; return; }
+            var h = '';
+            for (var k = 0; k < n; k++) {
+                h += '<button type="button" aria-label="Photo ' + (k + 1) + '" onclick="goToDetailImage(' + k + ')" class="w-2 h-2 rounded-full ' + (k === active ? 'bg-indigo-400' : 'bg-slate-600') + '"></button>';
+            }
+            d.innerHTML = h;
+        }
+        function goToDetailImage(k) {
+            var c = document.getElementById('detImagesContainer');
+            c.scrollTo({ left: k * c.clientWidth, behavior: 'smooth' });
+        }
         function openLightboxAt(i) { if (currentDetailImages[i]) openLightbox(currentDetailImages[i]); }
 
         function openLightbox(imgSrc) {
