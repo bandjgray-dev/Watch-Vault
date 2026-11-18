@@ -84,6 +84,16 @@
                         <input type="text" id="model" placeholder="Submariner" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-indigo-500">
                     </div>
                 </div>
+                <!-- Multiple Categories Checkbox Selection & Custom Add -->
+                <div>
+                    <div class="flex justify-between items-center mb-1">
+                        <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-400">Categories (Select Multiple)</label>
+                        <button type="button" onclick="addNewCategoryPrompt()" class="text-indigo-400 hover:text-indigo-300 text-[10px] font-semibold">+ Add Custom Category</button>
+                    </div>
+                    <div id="categoryCheckboxesContainer" class="grid grid-cols-2 gap-2 bg-slate-950 p-3 rounded-xl border border-slate-800 max-h-32 overflow-y-auto">
+                        <!-- Populated dynamically -->
+                    </div>
+                </div>
                 <div class="grid grid-cols-2 gap-3">
                     <div>
                         <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Reference Number</label>
@@ -95,16 +105,6 @@
                     </div>
                 </div>
 
-                <!-- Multiple Categories Checkbox Selection & Custom Add -->
-                <div>
-                    <div class="flex justify-between items-center mb-1">
-                        <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-400">Categories (Select Multiple)</label>
-                        <button type="button" onclick="addNewCategoryPrompt()" class="text-indigo-400 hover:text-indigo-300 text-[10px] font-semibold">+ Add Custom Category</button>
-                    </div>
-                    <div id="categoryCheckboxesContainer" class="grid grid-cols-2 gap-2 bg-slate-950 p-3 rounded-xl border border-slate-800 max-h-32 overflow-y-auto">
-                        <!-- Populated dynamically -->
-                    </div>
-                </div>
 
                 <div class="grid grid-cols-2 gap-3">
                     <div>
@@ -167,15 +167,15 @@
                     </div>
                 </div>
                 <div>
-                    <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Notes</label>
-                    <textarea id="description" rows="2" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-indigo-500"></textarea>
-                </div>
-                <div>
                     <div class="flex justify-between items-center mb-1">
                         <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-400">Custom Fields</label>
                         <button type="button" onclick="addCustomFieldPrompt()" class="text-indigo-400 hover:text-indigo-300 text-[10px] font-semibold">+ Add Custom Field</button>
                     </div>
                     <div id="customFieldsContainer" class="space-y-2"></div>
+                </div>
+                <div>
+                    <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Notes</label>
+                    <textarea id="description" rows="2" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-indigo-500"></textarea>
                 </div>
                 <div>
                     <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Images (First image is cover)</label>
