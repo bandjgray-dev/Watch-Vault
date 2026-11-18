@@ -880,8 +880,9 @@
                 html += '<label class="' + rowCls + '"><input type="checkbox" id="' + item.id + '" ' + (item.def ? 'checked' : '') + ' class="rounded accent-indigo-600 mt-0.5"><span>' + esc(item.label) + ': ' + esc(v) + '</span></label>';
             });
             if (w.images && w.images.length) {
-                html += '<label class="' + rowCls + '"><input type="checkbox" id="sb_photos" checked class="rounded accent-indigo-600 mt-0.5"><span>Photos (' + w.images.length + ') — PDF only</span></label>';
+                html += '<label class="' + rowCls + '"><input type="checkbox" id="sb_photos" checked class="rounded accent-indigo-600 mt-0.5"><span>Photos (' + w.images.length + ') — PDF, text &amp; email</span></label>';
             }
+            html += '<label class="' + rowCls + '"><input type="checkbox" id="sb_reportimg" checked class="rounded accent-indigo-600 mt-0.5"><span>Dark report image — text &amp; email</span></label>';
             document.getElementById('shareOptionsBox').innerHTML = html;
             document.getElementById('shareModal').classList.remove('hidden');
             document.getElementById('shareModal').classList.add('flex');
@@ -907,23 +908,187 @@
             return watches.find(function(item) { return item.id === Number(activeShareWatchId); });
         }
 
-        function executeShareText() {
+        function getReportModel(w) {
+            var sel = getShareItems(w).filter(function(it) { return isShareChecked(it.id); });
+            var byId = {};
+            sel.forEach(function(it) { byId[it.id] = it; });
+            var topDefs = [['sb_val', 'Estimated Value', 'g'], ['sb_mov', 'Movement', ''], ['sb_ref', 'Reference No.', 'm'], ['sb_sn', 'Serial Number', 'm']];
+            var skip = ['sb_brand', 'sb_desc', 'sb_val', 'sb_mov', 'sb_ref', 'sb_sn'];
+            return {
+                title: byId.sb_brand ? String(byId.sb_brand.val) : '',
+                top: topDefs.filter(function(d) { return byId[d[0]]; }).map(function(d) { return { label: d[1], val: String(byId[d[0]].val), cls: d[2] }; }),
+                specs: sel.filter(function(it) { return skip.indexOf(it.id) === -1; }).map(function(it) { return { label: it.label, val: String(it.val), cls: '' }; }),
+                notes: byId.sb_desc ? String(byId.sb_desc.val) : ''
+            };
+        }
+
+        function loadImg(src) {
+            return new Promise(function(res) {
+                var im = new Image();
+                if (!/^data:/.test(src)) im.crossOrigin = 'anonymous';
+                im.onload = function() { res(im); };
+                im.onerror = function() { res(null); };
+                im.src = src;
+            });
+        }
+
+        function wrapLines(x, text, maxW) {
+            var out = [];
+            String(text).split('\n').forEach(function(par) {
+                var line = '';
+                par.split(' ').forEach(function(wd) {
+                    var t = line ? line + ' ' + wd : wd;
+                    if (x.measureText(t).width > maxW && line) { out.push(line); line = wd; } else line = t;
+                });
+                out.push(line);
+            });
+            return out;
+        }
+
+        async function renderReportImage(w) {
+            if (!isShareChecked('sb_reportimg')) return null;
+            try {
+                var m = getReportModel(w);
+                var imgs = isShareChecked('sb_photos') ? (w.images || []) : [];
+                var loaded = (await Promise.all(imgs.map(loadImg))).filter(Boolean);
+                var W = 1080, P = 48, IW = W - 2 * P, F = '-apple-system, Roboto, Helvetica, Arial, sans-serif';
+                var c = document.createElement('canvas');
+                c.width = W; c.height = 8000;
+                var x = c.getContext('2d');
+                x.fillStyle = '#0f172a'; x.fillRect(0, 0, W, 8000);
+                x.textBaseline = 'top';
+                var y = P;
+                function rr(px, py, pw, ph, r) {
+                    x.beginPath(); x.moveTo(px + r, py);
+                    x.arcTo(px + pw, py, px + pw, py + ph, r); x.arcTo(px + pw, py + ph, px, py + ph, r);
+                    x.arcTo(px, py + ph, px, py, r); x.arcTo(px, py, px + pw, py, r); x.closePath();
+                }
+                function drawImg(im, px, py, pw, ph, r) {
+                    x.save(); rr(px, py, pw, ph, r); x.clip(); x.drawImage(im, px, py, pw, ph); x.restore();
+                    rr(px, py, pw, ph, r); x.strokeStyle = '#1e293b'; x.lineWidth = 2; x.stroke();
+                }
+                function boxBg(h) { rr(P, y, IW, h, 36); x.fillStyle = '#020617'; x.fill(); x.strokeStyle = '#1e293b'; x.lineWidth = 2; x.stroke(); }
+                function heading(t) {
+                    x.font = 'bold 24px ' + F; x.letterSpacing = '3px'; x.fillStyle = '#64748b';
+                    x.fillText(t.toUpperCase(), P, y); x.letterSpacing = '0px'; y += 48;
+                }
+                function cellFont(cell) {
+                    return cell.cls === 'g' ? 'bold 40px ' + F : cell.cls === 'm' ? '34px ui-monospace, Menlo, Consolas, monospace' : '34px ' + F;
+                }
+                function drawGrid(cells) {
+                    if (!cells.length) return;
+                    var pad = 34, gap = 40, colW = (IW - 2 * pad - gap) / 2, rows = [];
+                    for (var i = 0; i < cells.length; i += 2) rows.push(cells.slice(i, i + 2));
+                    var hs = rows.map(function(row) {
+                        return Math.max.apply(null, row.map(function(cl) { x.font = cellFont(cl); cl.lines = wrapLines(x, cl.val, colW); return 34 + cl.lines.length * 46; }));
+                    });
+                    var boxH = 2 * pad + hs.reduce(function(a, b) { return a + b; }, 0) + (rows.length - 1) * 30;
+                    boxBg(boxH);
+                    var cy = y + pad;
+                    rows.forEach(function(row, ri) {
+                        row.forEach(function(cl, ci) {
+                            var cx = P + pad + ci * (colW + gap);
+                            x.font = 'bold 22px ' + F; x.letterSpacing = '2px'; x.fillStyle = '#64748b';
+                            x.fillText(cl.label.toUpperCase(), cx, cy); x.letterSpacing = '0px';
+                            x.font = cellFont(cl); x.fillStyle = cl.cls === 'g' ? '#34d399' : '#e2e8f0';
+                            cl.lines.forEach(function(ln, li) { x.fillText(ln, cx, cy + 34 + li * 46); });
+                        });
+                        cy += hs[ri] + 30;
+                    });
+                    y += boxH + 24;
+                }
+
+                if (loaded.length) {
+                    var cv = loaded[0], sc = Math.min(IW / cv.width, 520 / cv.height), dw = cv.width * sc, dh = cv.height * sc;
+                    drawImg(cv, (W - dw) / 2, y, dw, dh, 36); y += dh + 16;
+                    var H = 200, gp = 16, rows2 = [], cur = [], curW = 0;
+                    loaded.slice(1).forEach(function(im) {
+                        var w2 = im.width * H / im.height, add = (cur.length ? gp : 0) + w2;
+                        if (cur.length && curW + add > IW) { rows2.push(cur); cur = []; curW = 0; add = w2; }
+                        cur.push({ im: im, w: w2 }); curW += add;
+                    });
+                    if (cur.length) rows2.push(cur);
+                    rows2.forEach(function(row) {
+                        var rw = row.reduce(function(a, b) { return a + b.w; }, 0) + gp * (row.length - 1), px = (W - rw) / 2;
+                        row.forEach(function(it) { drawImg(it.im, px, y, it.w, H, 16); px += it.w + gp; });
+                        y += H + gp;
+                    });
+                    y += 8;
+                }
+                if (m.title) {
+                    x.font = 'bold 56px ' + F; x.fillStyle = '#ffffff';
+                    wrapLines(x, m.title, IW).forEach(function(ln) { x.fillText(ln, P, y); y += 68; });
+                    y += 10;
+                }
+                drawGrid(m.top);
+                if (m.specs.length) { y += 12; heading('Additional Specifications'); drawGrid(m.specs); }
+                if (m.notes) {
+                    y += 12; heading('Notes');
+                    x.font = '34px ' + F;
+                    var nl = wrapLines(x, m.notes, IW - 68), nh = 68 + nl.length * 46;
+                    boxBg(nh); x.fillStyle = '#e2e8f0';
+                    nl.forEach(function(ln, i) { x.fillText(ln, P + 34, y + 34 + i * 46); });
+                    y += nh + 24;
+                }
+                x.font = '22px ' + F; x.fillStyle = '#475569'; x.textAlign = 'center';
+                x.fillText('Watch Vault \u00b7 ' + new Date().toLocaleDateString(), W / 2, y + 8);
+                y += 60;
+                var out = document.createElement('canvas');
+                out.width = W; out.height = Math.min(y, 8000);
+                out.getContext('2d').drawImage(c, 0, 0, W, out.height, 0, 0, W, out.height);
+                var blob = await new Promise(function(res) { out.toBlob(res, 'image/png'); });
+                return blob ? new File([blob], 'watch-report.png', { type: 'image/png' }) : null;
+            } catch (e) { console.error(e); return null; }
+        }
+
+        async function getSharePhotoFiles(w) {
+            var files = [];
+            if (!isShareChecked('sb_photos')) return files;
+            var imgs = w.images || [];
+            for (var i = 0; i < imgs.length; i++) {
+                try {
+                    var blob = await (await fetch(imgs[i])).blob();
+                    files.push(new File([blob], 'watch-photo-' + (i + 1) + '.jpg', { type: blob.type || 'image/jpeg' }));
+                } catch (e) { /* skip photos that can't be read */ }
+            }
+            return files;
+        }
+
+        function canShareFiles(files) {
+            return files.length > 0 && navigator.canShare && navigator.canShare({ files: files });
+        }
+
+        async function executeShareText() {
             var w = getShareWatch();
             if (!w) return;
             var txt = buildShareTextPayload();
+            var files = await getSharePhotoFiles(w);
+            var reportImg = await renderReportImage(w);
+            if (reportImg) files.unshift(reportImg);
             closeShareModal();
             var titleStr = (w.brand || '') + (w.model ? ' ' + w.model : '');
-            if (navigator.share) navigator.share({ title: titleStr, text: txt }).catch(function() {});
+            var data = { title: titleStr, text: txt };
+            if (canShareFiles(files)) data.files = files;
+            if (navigator.share) navigator.share(data).catch(function() {});
             else prompt("Copy report to share:", txt);
         }
 
-        function executeEmailReport() {
+        async function executeEmailReport() {
             var w = getShareWatch();
             if (!w) return;
             var txt = buildShareTextPayload();
+            var files = await getSharePhotoFiles(w);
+            var reportImg = await renderReportImage(w);
+            if (reportImg) files.unshift(reportImg);
             closeShareModal();
             var titleStr = (w.brand || '') + (w.model ? ' ' + w.model : '');
-            window.location.href = "mailto:?subject=" + encodeURIComponent("Watch Specification: " + titleStr) + "&body=" + encodeURIComponent(txt);
+            var subject = "Watch Specification: " + titleStr;
+            if (canShareFiles(files)) {
+                navigator.share({ title: subject, text: txt, files: files }).catch(function() {});
+                return;
+            }
+            if (files.length) alert("This browser can't attach photos to an email automatically, so the email will open without them.");
+            window.location.href = "mailto:?subject=" + encodeURIComponent(subject) + "&body=" + encodeURIComponent(txt);
         }
 
         function executeGeneratePDF() {
