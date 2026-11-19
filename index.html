@@ -880,9 +880,9 @@
                 html += '<label class="' + rowCls + '"><input type="checkbox" id="' + item.id + '" ' + (item.def ? 'checked' : '') + ' class="rounded accent-indigo-600 mt-0.5"><span>' + esc(item.label) + ': ' + esc(v) + '</span></label>';
             });
             if (w.images && w.images.length) {
-                html += '<label class="' + rowCls + '"><input type="checkbox" id="sb_photos" checked class="rounded accent-indigo-600 mt-0.5"><span>Photos (' + w.images.length + ') — PDF, text &amp; email</span></label>';
+                html += '<label class="' + rowCls + '"><input type="checkbox" id="sb_photos" checked class="rounded accent-indigo-600 mt-0.5"><span>Photos (' + w.images.length + ') — PDF &amp; report image</span></label>';
             }
-            html += '<label class="' + rowCls + '"><input type="checkbox" id="sb_reportimg" checked class="rounded accent-indigo-600 mt-0.5"><span>Dark report image — text &amp; email</span></label>';
+            html += '<label class="' + rowCls + '"><input type="checkbox" id="sb_reportimg" checked class="rounded accent-indigo-600 mt-0.5"><span>Report image — attached to text &amp; email</span></label>';
             document.getElementById('shareOptionsBox').innerHTML = html;
             document.getElementById('shareModal').classList.remove('hidden');
             document.getElementById('shareModal').classList.add('flex');
@@ -897,7 +897,7 @@
         function buildShareTextPayload() {
             var w = watches.find(function(item) { return item.id === Number(activeShareWatchId); });
             if (!w) return '';
-            var txt = "⌚ Watch Details Report\n";
+            var txt = "Watch Details\n";
             getShareItems(w).forEach(function(it) {
                 if (isShareChecked(it.id)) txt += it.label + ": " + it.val + "\n";
             });
@@ -1062,13 +1062,12 @@
             var w = getShareWatch();
             if (!w) return;
             var txt = buildShareTextPayload();
-            var files = await getSharePhotoFiles(w);
             var reportImg = await renderReportImage(w);
-            if (reportImg) files.unshift(reportImg);
+            var files = reportImg ? [reportImg] : [];
             closeShareModal();
             var titleStr = (w.brand || '') + (w.model ? ' ' + w.model : '');
             var data = { title: titleStr, text: txt };
-            if (canShareFiles(files)) data.files = files;
+            if (canShareFiles(files)) { data.files = files; data.text = 'Attached are the watch details for ' + titleStr + '.'; }
             if (navigator.share) navigator.share(data).catch(function() {});
             else prompt("Copy report to share:", txt);
         }
@@ -1077,17 +1076,16 @@
             var w = getShareWatch();
             if (!w) return;
             var txt = buildShareTextPayload();
-            var files = await getSharePhotoFiles(w);
             var reportImg = await renderReportImage(w);
-            if (reportImg) files.unshift(reportImg);
+            var files = reportImg ? [reportImg] : [];
             closeShareModal();
             var titleStr = (w.brand || '') + (w.model ? ' ' + w.model : '');
             var subject = "Watch Specification: " + titleStr;
             if (canShareFiles(files)) {
-                navigator.share({ title: subject, text: txt, files: files }).catch(function() {});
+                navigator.share({ title: subject, text: 'Attached are the watch details for ' + titleStr + '.', files: files }).catch(function() {});
                 return;
             }
-            if (files.length) alert("This browser can't attach photos to an email automatically, so the email will open without them.");
+            if (files.length) alert("This browser can't attach the report image to an email automatically, so the email will open with the details as text instead.");
             window.location.href = "mailto:?subject=" + encodeURIComponent(subject) + "&body=" + encodeURIComponent(txt);
         }
 
