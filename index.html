@@ -1080,7 +1080,7 @@
             var files = reportImg ? [reportImg] : [];
             closeShareModal();
             var titleStr = (w.brand || '') + (w.model ? ' ' + w.model : '');
-            var subject = "Watch Specification: " + titleStr;
+            var subject = "Watch Details";
             if (canShareFiles(files)) {
                 navigator.share({ title: subject, text: 'Attached are the watch details for ' + titleStr + '.', files: files }).catch(function() {});
                 return;
