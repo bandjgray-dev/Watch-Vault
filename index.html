@@ -59,6 +59,7 @@
             <input type="file" id="importFile" accept=".json" class="hidden" onchange="importBackup(event)">
         </div>
         <div id="backupStatus" class="text-xs text-center text-slate-400 -mt-2"></div>
+        <button id="changeBackupBtn" type="button" onclick="changeBackupFile()" class="hidden mx-auto -mt-2 text-xs text-indigo-400 underline py-1">Choose a different backup file</button>
 
         <!-- Search & Sort -->
         <div class="flex gap-2">
@@ -1311,12 +1312,64 @@
             setTimeout(go, 8000);
         }
 
-        function exportBackup() {
+        async function getBackupHandle() {
+            try {
+                var db = await openIDB();
+                return await new Promise(function(res) {
+                    var r = db.transaction('vault', 'readonly').objectStore('vault').get('backup_handle');
+                    r.onsuccess = function() { db.close(); res(r.result || null); };
+                    r.onerror = function() { db.close(); res(null); };
+                });
+            } catch (e) { return null; }
+        }
+
+        async function setBackupHandle(h) {
+            try {
+                var db = await openIDB();
+                await new Promise(function(res) {
+                    var tx = db.transaction('vault', 'readwrite'), st = tx.objectStore('vault');
+                    if (h) st.put(h, 'backup_handle'); else st.delete('backup_handle');
+                    tx.oncomplete = function() { db.close(); res(); };
+                    tx.onerror = tx.onabort = function() { db.close(); res(); };
+                });
+            } catch (e) {}
+        }
+
+        async function changeBackupFile() {
+            await setBackupHandle(null);
+            exportBackup();
+        }
+
+        async function exportBackup() {
             var blob = new Blob([JSON.stringify({ watches: watches, categories: allCategories, customFields: customFieldDefs }, null, 2)], { type: 'application/json' });
+            if ('showSaveFilePicker' in window && window.self === window.top) {
+                try {
+                    var handle = await getBackupHandle();
+                    if (handle) {
+                        var perm = await handle.queryPermission({ mode: 'readwrite' });
+                        if (perm !== 'granted') perm = await handle.requestPermission({ mode: 'readwrite' });
+                        if (perm !== 'granted') handle = null;
+                    }
+                    if (!handle) {
+                        handle = await window.showSaveFilePicker({ suggestedName: 'watch-vault-backup.json', types: [{ description: 'Watch Vault backup', accept: { 'application/json': ['.json'] } }] });
+                        await setBackupHandle(handle);
+                    }
+                    var wr = await handle.createWritable();
+                    await wr.write(blob);
+                    await wr.close();
+                    setLastBackup();
+                    renderBackupStatus();
+                    toast('Backup file updated: ' + handle.name);
+                    return;
+                } catch (err) {
+                    if (err && err.name === 'AbortError') return;
+                    console.error(err);
+                }
+            }
             var url = URL.createObjectURL(blob);
             var dl = document.createElement('a');
             dl.href = url;
-            dl.download = "watch_vault_backup_" + new Date().toISOString().slice(0, 10) + ".json";
+            dl.download = "watch-vault-backup.json";
             document.body.appendChild(dl);
             dl.click();
             dl.remove();
@@ -1410,6 +1463,8 @@
         function renderBackupStatus() {
             var el = document.getElementById('backupStatus');
             if (!el) return;
+            var cb = document.getElementById('changeBackupBtn');
+            if (cb) cb.classList.toggle('hidden', !('showSaveFilePicker' in window));
             var t = getLastBackup();
             if (!t) { el.className = 'text-xs text-center text-amber-400 -mt-2'; el.textContent = '\u26a0 No backup yet. Tap Export Backup to protect your collection.'; return; }
             var days = Math.floor((Date.now() - t) / 86400000), stale = days >= 30;
