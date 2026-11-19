@@ -59,7 +59,6 @@
             <input type="file" id="importFile" accept=".json" class="hidden" onchange="importBackup(event)">
         </div>
         <div id="backupStatus" class="text-xs text-center text-slate-400 -mt-2"></div>
-        <button id="changeBackupBtn" type="button" onclick="changeBackupFile()" class="hidden mx-auto -mt-2 text-xs text-indigo-400 underline py-1">Choose a different backup file</button>
 
         <!-- Search & Sort -->
         <div class="flex gap-2">
@@ -1343,11 +1342,6 @@
             } catch (e) {}
         }
 
-        async function changeBackupFile() {
-            await setBackupHandle(null);
-            exportBackup();
-        }
-
         async function exportBackup() {
             var blob = new Blob([JSON.stringify({ watches: watches, categories: allCategories, customFields: customFieldDefs }, null, 2)], { type: 'application/json' });
             if ('showSaveFilePicker' in window && window.self === window.top) {
@@ -1471,8 +1465,6 @@
         function renderBackupStatus() {
             var el = document.getElementById('backupStatus');
             if (!el) return;
-            var cb = document.getElementById('changeBackupBtn');
-            if (cb) cb.classList.toggle('hidden', !('showSaveFilePicker' in window));
             var t = getLastBackup();
             if (!t) { el.className = 'text-xs text-center text-amber-400 -mt-2'; el.textContent = '\u26a0 No backup yet. Tap Export Backup to protect your collection.'; return; }
             var days = Math.floor((Date.now() - t) / 86400000), stale = days >= 30;
@@ -1584,7 +1576,10 @@
         document.addEventListener('pointercancel', endDrag);
 
         function render() {
-            var totalVal = watches.reduce(function(sum, w) { return sum + (Number(w.currentValue) || 0); }, 0);
+            var totalVal = watches.reduce(function(sum, w) {
+                var sold = String(w.salePrice == null ? '' : w.salePrice).trim() !== '';
+                return sold ? sum : sum + (Number(w.currentValue) || 0);
+            }, 0);
             var headerColEl = document.getElementById('headerCollectionVal');
             if (headerColEl) headerColEl.innerText = '$' + totalVal.toLocaleString();
             renderBackupStatus();
