@@ -58,20 +58,20 @@
         <div id="backupStatus" class="text-xs text-center text-slate-400 -mt-2"></div>
 
         <!-- Search & Sort -->
-        <div class="flex items-center gap-2.5 h-[46px] px-3.5 bg-slate-900 border border-slate-800 rounded-xl text-slate-400">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
-            <input id="searchBox" type="search" aria-label="Search watches" placeholder="Search watches" oninput="onSearch(this.value)" class="flex-1 min-w-0 bg-transparent outline-none text-[15px] text-slate-100 placeholder-slate-400">
-        </div>
-        <label class="flex justify-end items-center gap-2 -mt-1 text-xs text-slate-400">Sort by
-            <select id="sortSelect" onchange="onSort(this.value)" class="bg-slate-900 border border-slate-800 rounded-lg px-2 py-2 text-xs text-slate-200 focus:outline-none">
+        <div class="flex items-center gap-2">
+            <div class="flex-1 min-w-0 flex items-center gap-2.5 h-[46px] px-3.5 bg-slate-900 border border-slate-800 rounded-xl text-slate-400">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+                <input id="searchBox" type="search" aria-label="Search watches" placeholder="Search watches" oninput="onSearch(this.value)" class="flex-1 min-w-0 bg-transparent outline-none text-[15px] text-slate-100 placeholder-slate-400">
+            </div>
+            <select id="sortSelect" aria-label="Sort watches" onchange="onSort(this.value)" class="flex-none w-[118px] h-[46px] bg-slate-900 border border-slate-800 rounded-xl px-2 text-[13px] text-slate-200 focus:outline-none">
                 <option value="custom">My order</option>
-                <option value="value-desc">Value: high to low</option>
-                <option value="value-asc">Value: low to high</option>
+                <option value="value-desc">Value: high</option>
+                <option value="value-asc">Value: low</option>
                 <option value="brand">Brand A-Z</option>
                 <option value="added">Newest added</option>
                 <option value="purchase">Purchase date</option>
             </select>
-        </label>
+        </div>
 
         <!-- Status Filter -->
         <div id="statusFilters" class="flex border-b border-slate-800"></div>
