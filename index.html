@@ -47,10 +47,10 @@
 
         <!-- Backup & Restore Bar -->
         <div class="flex items-center gap-2">
-            <button type="button" aria-label="Export backup" onclick="exportBackup()" class="flex-none bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 font-medium text-xs px-3 py-3 rounded-xl active:scale-95 transition-all">&#128229; Export</button>
-            <button type="button" aria-label="Import backup" onclick="document.getElementById('importFile').click()" class="flex-none bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 font-medium text-xs px-3 py-3 rounded-xl active:scale-95 transition-all">&#128228; Import</button>
+            <button type="button" aria-label="Export backup" onclick="exportBackup()" class="flex-1 bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 font-medium text-xs px-3 py-3 rounded-xl text-center active:scale-95 transition-all">&#128229; Export</button>
+            <button type="button" aria-label="Import backup" onclick="document.getElementById('importFile').click()" class="flex-1 bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 font-medium text-xs px-3 py-3 rounded-xl text-center active:scale-95 transition-all">&#128228; Import</button>
             <input type="file" id="importFile" accept=".json" class="hidden" onchange="importBackup(event)">
-            <div id="backupStatus" class="flex-1 min-w-0 text-right text-[11px] leading-tight text-slate-400"></div>
+            <div id="backupStatus" class="flex-none max-w-[38%] text-right text-[11px] leading-tight text-slate-400"></div>
         </div>
 
         <!-- Search & Sort -->
@@ -1453,7 +1453,7 @@
         function renderBackupStatus() {
             var el = document.getElementById('backupStatus');
             if (!el) return;
-            var base = 'flex-1 min-w-0 text-right text-[11px] leading-tight ';
+            var base = 'flex-none max-w-[38%] text-right text-[11px] leading-tight ';
             var t = getLastBackup();
             if (!t) { el.className = base + 'text-amber-400'; el.textContent = '\u26a0 No backup yet'; return; }
             var days = Math.floor((Date.now() - t) / 86400000), stale = days >= 30;
